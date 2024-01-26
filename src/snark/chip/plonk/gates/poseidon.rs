@@ -673,6 +673,6 @@ mod tests {
     fn test_poseidon_gate() {
         let plonky2_gate = PoseidonGate::new();
         let halo2_gate = PoseidonGateConstrainer;
-        test_custom_gate(plonky2_gate, halo2_gate, 16);
+        test_custom_gate(plonky2_gate, halo2_gate, 17);
     }
 }

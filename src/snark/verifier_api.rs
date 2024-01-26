@@ -270,8 +270,6 @@ mod tests {
         let (inner_target, inner_data) = {
             let hash_const =
                 hash_n_to_hash_no_pad::<F, PoseidonPermutation>(&[F::from_canonical_u64(42)]);
-            dbg!(hash_const);
-
             let mut builder = CircuitBuilder::<F, D>::new(standard_inner_stark_verifier_config());
             let target = builder.add_virtual_target();
             let expected_hash = builder.constant_hash(hash_const);
@@ -344,23 +342,5 @@ mod tests {
             codes.push(deployment_code);
         }
         assert_eq!(codes[0], codes[1]);
-    }
-
-    #[test]
-    fn test_save_srs() {
-        let srs = EvmVerifier::gen_srs(23);
-        let now = Instant::now();
-        let mut buf = vec![];
-        srs.write(&mut buf).unwrap();
-        println!("write to buf {:?}", now.elapsed());
-
-        let mut srs_file = File::create("srs_buf.dat").unwrap();
-        srs_file.write(&buf).unwrap();
-        println!("saved to file {:?}", now.elapsed());
-
-        let now = Instant::now();
-        let mut srs_file = File::create("srs_direct.dat").unwrap();
-        srs.write(&mut srs_file).unwrap();
-        println!("saved to file directory {:?}", now.elapsed());
     }
 }
