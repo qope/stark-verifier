@@ -237,7 +237,7 @@ pub fn standard_inner_stark_verifier_config() -> CircuitConfig {
             reduction_strategy: FriReductionStrategy::ConstantArityBits(1, 5),
             num_query_rounds: 28,
         },
-        use_interpolation_gate: true,
+        use_interpolation_gate: false,
         ..standard_recursion_config
     }
 }
