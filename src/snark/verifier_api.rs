@@ -270,7 +270,8 @@ mod tests {
         let (inner_target, inner_data) = {
             let hash_const =
                 hash_n_to_hash_no_pad::<F, PoseidonPermutation<F>>(&[F::from_canonical_u64(42)]);
-            let mut builder = CircuitBuilder::<F, D>::new(standard_inner_stark_verifier_config());
+            let mut builder =
+                CircuitBuilder::<F, D>::new(CircuitConfig::standard_inner_stark_verifier_config());
             let target = builder.add_virtual_target();
             let expected_hash = builder.constant_hash(hash_const);
             let hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>(vec![target]);
