@@ -1,8 +1,8 @@
 use std::ops::Range;
 
-use halo2_proofs::{arithmetic::Field, plonk::Error};
-use halo2curves::{goldilocks::fp::Goldilocks, FieldExt};
+use halo2_proofs::{halo2curves::ff::PrimeField, plonk::Error};
 use halo2wrong::RegionCtx;
+use plonky2::field::{goldilocks_field::GoldilocksField, types::Field};
 
 use crate::snark::{
     chip::{
@@ -30,7 +30,7 @@ impl PoseidonMDSGateConstrainer {
         (T + i) * 2..(T + i + 1) * 2
     }
 
-    fn mds_row_shf<F: FieldExt>(
+    fn mds_row_shf<F: PrimeField>(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         goldilocks_chip_config: &GoldilocksChipConfig<F>,
@@ -46,7 +46,10 @@ impl PoseidonMDSGateConstrainer {
         for i in 0..T {
             let c = goldilocks_extension_chip.constant_extension(
                 ctx,
-                &[Goldilocks::from(MDS_MATRIX_CIRC[i]), Goldilocks::zero()],
+                &[
+                    GoldilocksField::from_canonical_u64(MDS_MATRIX_CIRC[i]),
+                    GoldilocksField::ZERO,
+                ],
             )?;
             res = goldilocks_extension_algebra_chip.scalar_mul_add_ext_algebra(
                 ctx,
@@ -57,7 +60,10 @@ impl PoseidonMDSGateConstrainer {
         }
         let c = goldilocks_extension_chip.constant_extension(
             ctx,
-            &[Goldilocks::from(MDS_MATRIX_DIAG[row]), Goldilocks::zero()],
+            &[
+                GoldilocksField::from_canonical_u64(MDS_MATRIX_DIAG[row]),
+                GoldilocksField::ZERO,
+            ],
         )?;
         res = goldilocks_extension_algebra_chip.scalar_mul_add_ext_algebra(
             ctx,
@@ -69,7 +75,7 @@ impl PoseidonMDSGateConstrainer {
         Ok(res)
     }
 
-    fn mds_layer<F: FieldExt>(
+    fn mds_layer<F: PrimeField>(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         goldilocks_chip_config: &GoldilocksChipConfig<F>,
@@ -86,7 +92,7 @@ impl PoseidonMDSGateConstrainer {
     }
 }
 
-impl<F: FieldExt> CustomGateConstrainer<F> for PoseidonMDSGateConstrainer {
+impl<F: PrimeField> CustomGateConstrainer<F> for PoseidonMDSGateConstrainer {
     fn eval_unfiltered_constraint(
         &self,
         ctx: &mut RegionCtx<'_, F>,

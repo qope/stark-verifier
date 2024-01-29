@@ -1,41 +1,40 @@
-use halo2_proofs::{
-    arithmetic::{Field, FieldExt},
-    plonk::Error,
-};
-use halo2curves::goldilocks::fp::Goldilocks;
+use halo2_proofs::{halo2curves::ff::PrimeField, plonk::Error};
 use halo2wrong_maingate::{AssignedValue, RegionCtx, Term};
-use poseidon::{SparseMDSMatrix, Spec, State};
+use plonky2::field::{goldilocks_field::GoldilocksField, types::Field};
 
-use super::goldilocks_chip::{GoldilocksChip, GoldilocksChipConfig};
+use super::{
+    goldilocks_chip::{GoldilocksChip, GoldilocksChipConfig},
+    spec::spec::{SparseMDSMatrix, Spec, State},
+};
 
 /// `AssignedState` is composed of `T` sized assigned values
 #[derive(Debug, Clone)]
-pub struct AssignedState<F: FieldExt, const T: usize>(pub(super) [AssignedValue<F>; T]);
+pub struct AssignedState<F: PrimeField, const T: usize>(pub(super) [AssignedValue<F>; T]);
 
 /// `HasherChip` is basically responsible for contraining permutation part of
 /// transcript pipeline
 #[derive(Debug, Clone)]
-pub struct HasherChip<F: FieldExt, const T: usize, const T_MINUS_ONE: usize, const RATE: usize> {
+pub struct HasherChip<F: PrimeField, const T: usize, const T_MINUS_ONE: usize, const RATE: usize> {
     state: AssignedState<F, T>,
     absorbing: Vec<AssignedValue<F>>,
     output_buffer: Vec<AssignedValue<F>>,
-    spec: Spec<Goldilocks, T, T_MINUS_ONE>,
+    spec: Spec<T, T_MINUS_ONE>,
     goldilocks_chip_config: GoldilocksChipConfig<F>,
 }
 
-impl<F: FieldExt, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
+impl<F: PrimeField, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
     HasherChip<F, T, T_MINUS_ONE, RATE>
 {
     // Constructs new hasher chip with assigned initial state
     pub fn new(
         // TODO: we can remove initial state assingment in construction
         ctx: &mut RegionCtx<'_, F>,
-        spec: &Spec<Goldilocks, T, T_MINUS_ONE>,
+        spec: &Spec<T, T_MINUS_ONE>,
         goldilocks_chip_config: &GoldilocksChipConfig<F>,
     ) -> Result<Self, Error> {
         let goldilocks_chip = GoldilocksChip::new(goldilocks_chip_config);
 
-        let initial_state = State::<_, T>::default()
+        let initial_state = State::<T>::default()
             .words()
             .iter()
             .map(|word| goldilocks_chip.assign_constant(ctx, *word))
@@ -93,7 +92,7 @@ impl<F: FieldExt, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
     }
 }
 
-impl<F: FieldExt, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
+impl<F: PrimeField, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
     HasherChip<F, T, T_MINUS_ONE, RATE>
 {
     /// Construct main gate
@@ -109,39 +108,39 @@ impl<F: FieldExt, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
         self.spec.r_f() / 2
     }
 
-    pub(super) fn constants_start(&self) -> Vec<[Goldilocks; T]> {
+    pub(super) fn constants_start(&self) -> Vec<[GoldilocksField; T]> {
         self.spec.constants().start().clone()
     }
 
-    pub(super) fn constants_partial(&self) -> Vec<Goldilocks> {
+    pub(super) fn constants_partial(&self) -> Vec<GoldilocksField> {
         self.spec.constants().partial().clone()
     }
 
-    pub(super) fn constants_end(&self) -> Vec<[Goldilocks; T]> {
+    pub(super) fn constants_end(&self) -> Vec<[GoldilocksField; T]> {
         self.spec.constants().end().clone()
     }
 
-    pub(super) fn mds(&self) -> [[Goldilocks; T]; T] {
+    pub(super) fn mds(&self) -> [[GoldilocksField; T]; T] {
         self.spec.mds_matrices().mds().rows()
     }
 
-    pub(super) fn pre_sparse_mds(&self) -> [[Goldilocks; T]; T] {
+    pub(super) fn pre_sparse_mds(&self) -> [[GoldilocksField; T]; T] {
         self.spec.mds_matrices().pre_sparse_mds().rows()
     }
 
-    pub(super) fn sparse_matrices(&self) -> Vec<SparseMDSMatrix<Goldilocks, T, T_MINUS_ONE>> {
+    pub(super) fn sparse_matrices(&self) -> Vec<SparseMDSMatrix<T, T_MINUS_ONE>> {
         self.spec.mds_matrices().sparse_matrices().clone()
     }
 }
 
-impl<F: FieldExt, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
+impl<F: PrimeField, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
     HasherChip<F, T, T_MINUS_ONE, RATE>
 {
     /// Applies full state sbox then adds constants to each word in the state
     fn sbox_full(
         &mut self,
         ctx: &mut RegionCtx<'_, F>,
-        constants: &[Goldilocks; T],
+        constants: &[GoldilocksField; T],
     ) -> Result<(), Error> {
         let goldilocks_chip = self.goldilocks_chip();
         for (word, constant) in self.state.0.iter_mut().zip(constants.iter()) {
@@ -155,7 +154,11 @@ impl<F: FieldExt, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
 
     /// Applies sbox to the first word then adds constants to each word in the
     /// state
-    fn sbox_part(&mut self, ctx: &mut RegionCtx<'_, F>, constant: Goldilocks) -> Result<(), Error> {
+    fn sbox_part(
+        &mut self,
+        ctx: &mut RegionCtx<'_, F>,
+        constant: GoldilocksField,
+    ) -> Result<(), Error> {
         let goldilocks_chip = self.goldilocks_chip();
         let word = &mut self.state.0[0];
         let word2 = goldilocks_chip.mul(ctx, word, word)?;
@@ -170,7 +173,7 @@ impl<F: FieldExt, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
     fn absorb_with_pre_constants(
         &mut self,
         ctx: &mut RegionCtx<'_, F>,
-        pre_constants: &[Goldilocks; T],
+        pre_constants: &[GoldilocksField; T],
     ) -> Result<(), Error> {
         let goldilocks_chip = self.goldilocks_chip();
 
@@ -186,7 +189,7 @@ impl<F: FieldExt, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
     fn apply_mds(
         &mut self,
         ctx: &mut RegionCtx<'_, F>,
-        mds: &[[Goldilocks; T]; T],
+        mds: &[[GoldilocksField; T]; T],
     ) -> Result<(), Error> {
         let goldilocks_chip = self.goldilocks_chip();
         // Calculate new state
@@ -204,7 +207,7 @@ impl<F: FieldExt, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
                     })
                     .collect::<Vec<Term<F>>>();
 
-                goldilocks_chip.compose(ctx, &terms[..], Goldilocks::zero())
+                goldilocks_chip.compose(ctx, &terms[..], GoldilocksField::ZERO)
             })
             .collect::<Result<Vec<AssignedValue<F>>, Error>>()?;
 
@@ -220,7 +223,7 @@ impl<F: FieldExt, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
     fn apply_sparse_mds(
         &mut self,
         ctx: &mut RegionCtx<'_, F>,
-        mds: &SparseMDSMatrix<Goldilocks, T, T_MINUS_ONE>,
+        mds: &SparseMDSMatrix<T, T_MINUS_ONE>,
     ) -> Result<(), Error> {
         let goldilocks_chip = self.goldilocks_chip();
         // For the 0th word
@@ -234,7 +237,7 @@ impl<F: FieldExt, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
         let mut new_state =
             vec![self
                 .goldilocks_chip()
-                .compose(ctx, &terms[..], Goldilocks::zero())?];
+                .compose(ctx, &terms[..], GoldilocksField::ZERO)?];
 
         // Rest of the trainsition ie the sparse part
         for (e, word) in mds.col_hat().iter().zip(self.state.0.iter().skip(1)) {
@@ -245,9 +248,9 @@ impl<F: FieldExt, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
                         &self.state.0[0],
                         goldilocks_chip.goldilocks_to_native_fe(*e),
                     ),
-                    Term::Assigned(word, F::one()),
+                    Term::Assigned(word, F::from(1)),
                 ],
-                Goldilocks::zero(),
+                GoldilocksField::ZERO,
             )?);
         }
 
@@ -289,7 +292,7 @@ impl<F: FieldExt, const T: usize, const T_MINUS_ONE: usize, const RATE: usize>
             self.sbox_full(ctx, constants)?;
             self.apply_mds(ctx, &mds)?;
         }
-        self.sbox_full(ctx, &[Goldilocks::zero(); T])?;
+        self.sbox_full(ctx, &[GoldilocksField::ZERO; T])?;
         self.apply_mds(ctx, &mds)?;
 
         Ok(())
@@ -367,20 +370,15 @@ mod tests {
     use halo2_proofs::{
         circuit::{floor_planner::V1, Layouter, Value},
         dev::MockProver,
-        halo2curves::bn256::{Bn256, Fr},
+        halo2curves::bn256::Fr,
         plonk::{Circuit, ConstraintSystem, Error},
-        poly::kzg::commitment::ParamsKZG,
     };
-    use halo2curves::goldilocks::fp::Goldilocks;
     use halo2wrong::RegionCtx;
-    use poseidon::Spec;
 
-    use crate::snark::{
-        chip::{
-            goldilocks_chip::{GoldilocksChip, GoldilocksChipConfig},
-            native_chip::arithmetic_chip::ArithmeticChipConfig,
-        },
-        verifier_api::EvmVerifier,
+    use crate::snark::chip::{
+        goldilocks_chip::{GoldilocksChip, GoldilocksChipConfig},
+        native_chip::arithmetic_chip::ArithmeticChipConfig,
+        spec::spec::Spec,
     };
 
     use super::HasherChip;
@@ -408,7 +406,7 @@ mod tests {
         ) -> Result<(), Error> {
             let goldilocks_chip = GoldilocksChip::new(&config);
             goldilocks_chip.load_table(&mut layouter)?;
-            let spec = Spec::<Goldilocks, 12, 11>::new(8, 22);
+            let spec = Spec::<12, 11>::new(8, 22);
 
             layouter.assign_region(
                 || "Verify proof",
@@ -434,13 +432,5 @@ mod tests {
         let mock_prover = MockProver::run(DEGREE, &circuit, vec![instance.clone()]).unwrap();
         mock_prover.assert_satisfied();
         println!("{}", "Mock prover passes");
-
-        // generates EVM verifier
-        let srs: ParamsKZG<Bn256> = EvmVerifier::gen_srs(DEGREE);
-        let pk = EvmVerifier::gen_pk(&srs, &circuit);
-        // generates SNARK proof and runs EVM verifier
-        println!("{}", "Starting finalization phase");
-        let _proof = EvmVerifier::gen_proof(&srs, &pk, circuit.clone(), vec![instance.clone()]);
-        println!("{}", "SNARK proof generated successfully!");
     }
 }

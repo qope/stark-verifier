@@ -1,28 +1,32 @@
 use halo2_proofs::{
-    arithmetic::Field,
     circuit::{AssignedCell, Layouter, Value},
+    halo2curves::ff::PrimeField,
     plonk::Error,
 };
-use halo2curves::{goldilocks::fp::Goldilocks, FieldExt};
 use halo2wrong::RegionCtx;
-use halo2wrong_maingate::{big_to_fe, fe_to_big, AssignedCondition, AssignedValue};
+use halo2wrong_maingate::{fe_to_big, AssignedCondition, AssignedValue};
 use num_bigint::BigUint;
-use num_traits::Num;
 
 use halo2wrong_maingate::Term as MainGateTerm;
+use plonky2::field::{
+    goldilocks_field::GoldilocksField,
+    types::{Field, PrimeField64},
+};
 
-use super::native_chip::arithmetic_chip::{ArithmeticChip, ArithmeticChipConfig, Term};
+use super::native_chip::arithmetic_chip::{
+    ArithmeticChip, ArithmeticChipConfig, Term, GOLDILOCKS_MODULUS,
+};
 
 #[derive(Clone, Debug)]
-pub struct GoldilocksChipConfig<F: FieldExt> {
+pub struct GoldilocksChipConfig<F: PrimeField> {
     arithmetic_config: ArithmeticChipConfig<F>,
 }
 
-pub struct GoldilocksChip<F: FieldExt> {
+pub struct GoldilocksChip<F: PrimeField> {
     goldilocks_chip_config: GoldilocksChipConfig<F>,
 }
 
-impl<F: FieldExt> GoldilocksChip<F> {
+impl<F: PrimeField> GoldilocksChip<F> {
     pub fn configure(arithmetic_chip_config: &ArithmeticChipConfig<F>) -> GoldilocksChipConfig<F> {
         GoldilocksChipConfig {
             arithmetic_config: arithmetic_chip_config.clone(),
@@ -40,16 +44,22 @@ impl<F: FieldExt> GoldilocksChip<F> {
     }
 
     pub fn goldilocks_modulus(&self) -> BigUint {
-        BigUint::from_str_radix(&Goldilocks::MODULUS[2..], 16).unwrap()
+        BigUint::from(GOLDILOCKS_MODULUS)
     }
 
-    pub fn goldilocks_to_native_fe(&self, goldilocks: Goldilocks) -> F {
-        big_to_fe::<F>(fe_to_big::<Goldilocks>(goldilocks))
+    pub fn goldilocks_to_native_fe(&self, goldilocks: GoldilocksField) -> F {
+        F::from(goldilocks.to_canonical_u64())
     }
 
     // assumes `fe` is already in goldilocks field
-    fn native_fe_to_goldilocks(&self, fe: F) -> Goldilocks {
-        big_to_fe::<Goldilocks>(fe_to_big::<F>(fe))
+    fn native_fe_to_goldilocks(&self, fe: F) -> GoldilocksField {
+        let fe_big = fe_to_big::<F>(fe);
+        let digits = fe_big.to_u64_digits();
+        if digits.len() == 0 {
+            GoldilocksField::ZERO
+        } else {
+            GoldilocksField::from_canonical_u64(digits[0])
+        }
     }
 
     pub fn assign_value(
@@ -64,7 +74,7 @@ impl<F: FieldExt> GoldilocksChip<F> {
         &self,
         ctx: &mut RegionCtx<'_, F>,
         terms: &[MainGateTerm<F>],
-        constant: Goldilocks,
+        constant: GoldilocksField,
     ) -> Result<AssignedValue<F>, Error> {
         let mut acc = self.assign_constant(ctx, constant)?;
         for term in terms {
@@ -83,7 +93,7 @@ impl<F: FieldExt> GoldilocksChip<F> {
     pub fn assign_constant(
         &self,
         ctx: &mut RegionCtx<'_, F>,
-        constant: Goldilocks,
+        constant: GoldilocksField,
     ) -> Result<AssignedValue<F>, Error> {
         self.arithmetic_chip()
             .assign_fixed(ctx, self.goldilocks_to_native_fe(constant))
@@ -98,7 +108,7 @@ impl<F: FieldExt> GoldilocksChip<F> {
         let assigned = self.arithmetic_chip().apply(
             ctx,
             Term::Assigned(lhs),
-            Term::Fixed(F::one()),
+            Term::Fixed(F::from(1)),
             Term::Assigned(rhs),
         )?;
         Ok(assigned.r)
@@ -113,7 +123,7 @@ impl<F: FieldExt> GoldilocksChip<F> {
         let assigned = self.arithmetic_chip().apply(
             ctx,
             Term::Assigned(rhs),
-            Term::Fixed(self.goldilocks_to_native_fe(-Goldilocks::one())),
+            Term::Fixed(self.goldilocks_to_native_fe(-GoldilocksField::ONE)),
             Term::Assigned(lhs),
         )?;
         Ok(assigned.r)
@@ -125,7 +135,7 @@ impl<F: FieldExt> GoldilocksChip<F> {
         lhs: &AssignedValue<F>,
         rhs: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
-        self.mul_add_constant(ctx, lhs, rhs, Goldilocks::zero())
+        self.mul_add_constant(ctx, lhs, rhs, GoldilocksField::ZERO)
     }
     /// `lhs * rhs * constant`
     pub fn mul_with_constant(
@@ -133,13 +143,13 @@ impl<F: FieldExt> GoldilocksChip<F> {
         ctx: &mut RegionCtx<'_, F>,
         lhs: &AssignedValue<F>,
         rhs: &AssignedValue<F>,
-        constant: Goldilocks,
+        constant: GoldilocksField,
     ) -> Result<AssignedValue<F>, Error> {
         let mul_assigned = self.arithmetic_chip().apply(
             ctx,
             Term::Assigned(lhs),
             Term::Assigned(rhs),
-            Term::Fixed(F::zero()),
+            Term::Fixed(F::from(0)),
         )?;
         let zero_assigned = mul_assigned.c;
         let assigned = self.arithmetic_chip().apply(
@@ -156,7 +166,7 @@ impl<F: FieldExt> GoldilocksChip<F> {
         ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
-        to_add: Goldilocks,
+        to_add: GoldilocksField,
     ) -> Result<AssignedValue<F>, Error> {
         let assigned = self.arithmetic_chip().apply(
             ctx,
@@ -171,7 +181,7 @@ impl<F: FieldExt> GoldilocksChip<F> {
         &self,
         ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
-        constant: Goldilocks,
+        constant: GoldilocksField,
         b: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
         let assigned = self.arithmetic_chip().apply(
@@ -187,9 +197,9 @@ impl<F: FieldExt> GoldilocksChip<F> {
         &self,
         ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
-        constant: Goldilocks,
+        constant: GoldilocksField,
     ) -> Result<AssignedValue<F>, Error> {
-        let one = self.assign_constant(ctx, Goldilocks::one())?;
+        let one = self.assign_constant(ctx, GoldilocksField::ONE)?;
         self.mul_add_constant(ctx, a, &one, constant)
     }
 
@@ -207,7 +217,7 @@ impl<F: FieldExt> GoldilocksChip<F> {
         ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
     ) -> Result<(), Error> {
-        let one = self.assign_constant(ctx, Goldilocks::one())?;
+        let one = self.assign_constant(ctx, GoldilocksField::ONE)?;
         self.assert_equal(ctx, a, &one)
     }
 
@@ -216,7 +226,7 @@ impl<F: FieldExt> GoldilocksChip<F> {
         ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
     ) -> Result<(), Error> {
-        let zero = self.assign_constant(ctx, Goldilocks::zero())?;
+        let zero = self.assign_constant(ctx, GoldilocksField::ZERO)?;
         self.assert_equal(ctx, a, &zero)
     }
 
@@ -231,7 +241,7 @@ impl<F: FieldExt> GoldilocksChip<F> {
             ctx,
             Term::Unassigned(bit.clone()),
             Term::Assigned(one),
-            Term::Fixed(self.goldilocks_to_native_fe(-Goldilocks::one())),
+            Term::Fixed(self.goldilocks_to_native_fe(-GoldilocksField::ONE)),
         )?;
         let b = assigned.a;
         let b_minus_one = assigned.r;
@@ -261,21 +271,21 @@ impl<F: FieldExt> GoldilocksChip<F> {
     ) -> Result<AssignedCondition<F>, Error> {
         let a_inv = a.value().map(|a| {
             let a = self.native_fe_to_goldilocks(*a);
-            if a == Goldilocks::zero() {
-                F::zero()
+            if a == GoldilocksField::ZERO {
+                F::from(0)
             } else {
-                big_to_fe(fe_to_big::<Goldilocks>(a.invert().unwrap()))
+                self.goldilocks_to_native_fe(a.inverse())
             }
         });
         let assigned = self.arithmetic_chip().apply(
             ctx,
             Term::Assigned(a),
             Term::Unassigned(a_inv),
-            Term::Fixed(F::zero()),
+            Term::Fixed(F::from(0)),
         )?;
         let a_a_inv = assigned.r;
         let zero = assigned.c;
-        let one = self.assign_constant(ctx, Goldilocks::one())?;
+        let one = self.assign_constant(ctx, GoldilocksField::ONE)?;
         let out = self.sub(ctx, &one, &a_a_inv)?;
         let out_a = self.mul(ctx, &out, &a)?;
         self.assert_equal(ctx, &out_a, &zero)?;
@@ -290,8 +300,8 @@ impl<F: FieldExt> GoldilocksChip<F> {
         composed: &AssignedValue<F>,
         number_of_bits: usize,
     ) -> Result<Vec<AssignedCondition<F>>, Error> {
-        let zero = self.assign_constant(ctx, Goldilocks::zero())?;
-        let one = self.assign_constant(ctx, Goldilocks::one())?;
+        let zero = self.assign_constant(ctx, GoldilocksField::ZERO)?;
+        let one = self.assign_constant(ctx, GoldilocksField::ONE)?;
         let bit_value = composed
             .value()
             .map(|x| {
@@ -331,7 +341,7 @@ impl<F: FieldExt> GoldilocksChip<F> {
         ctx: &mut RegionCtx<'_, F>,
         bits: &Vec<AssignedValue<F>>,
     ) -> Result<AssignedValue<F>, Error> {
-        let zero = self.assign_constant(ctx, Goldilocks::zero())?;
+        let zero = self.assign_constant(ctx, GoldilocksField::ZERO)?;
         let acc = bits.iter().enumerate().fold(
             Ok(zero),
             |acc: Result<AssignedCell<F, F>, Error>, (i, bit)| {
@@ -364,15 +374,15 @@ impl<F: FieldExt> GoldilocksChip<F> {
     pub fn exp_from_bits(
         &self,
         ctx: &mut RegionCtx<'_, F>,
-        base: Goldilocks,
+        base: GoldilocksField,
         power_bits: &[AssignedValue<F>],
     ) -> Result<AssignedValue<F>, Error> {
-        let mut x = self.assign_constant(ctx, Goldilocks::one())?;
-        let one = self.assign_constant(ctx, Goldilocks::one())?;
+        let mut x = self.assign_constant(ctx, GoldilocksField::ONE)?;
+        let one = self.assign_constant(ctx, GoldilocksField::ONE)?;
         for (i, bit) in power_bits.iter().enumerate() {
             let is_zero_bit = self.is_zero(ctx, bit)?;
             let power = u64::from(1u64 << i).to_le();
-            let base = self.assign_constant(ctx, base.pow(&[power, 0, 0, 0]))?;
+            let base = self.assign_constant(ctx, base.exp_u64(power))?;
             let multiplicand = self.select(ctx, &one, &base, &is_zero_bit)?;
             x = self.mul(ctx, &x, &multiplicand)?;
         }
@@ -402,16 +412,14 @@ mod tests {
     use halo2_proofs::{
         circuit::{floor_planner::V1, Layouter},
         dev::MockProver,
-        halo2curves::bn256::{Bn256, Fr},
+        halo2curves::bn256::Fr,
         plonk::{Circuit, ConstraintSystem, Error},
-        poly::kzg::commitment::ParamsKZG,
     };
-    use halo2curves::goldilocks::fp::Goldilocks;
     use halo2wrong::RegionCtx;
+    use plonky2::field::{goldilocks_field::GoldilocksField, types::Field};
 
-    use crate::snark::{
-        chip::native_chip::arithmetic_chip::{ArithmeticChipConfig, GOLDILOCKS_MODULUS},
-        verifier_api::EvmVerifier,
+    use crate::snark::chip::native_chip::arithmetic_chip::{
+        ArithmeticChipConfig, GOLDILOCKS_MODULUS,
     };
 
     use super::{GoldilocksChip, GoldilocksChipConfig};
@@ -444,8 +452,11 @@ mod tests {
                 |region| {
                     let ctx = &mut RegionCtx::new(region, 0);
 
-                    let a = chip.assign_constant(ctx, Goldilocks::from(GOLDILOCKS_MODULUS - 2))?;
-                    let b = chip.assign_constant(ctx, Goldilocks::from(3))?;
+                    let a = chip.assign_constant(
+                        ctx,
+                        GoldilocksField::from_canonical_u64(GOLDILOCKS_MODULUS - 2),
+                    )?;
+                    let b = chip.assign_constant(ctx, GoldilocksField::from_canonical_u64(3))?;
                     let _c = chip.add(ctx, &a, &b)?;
 
                     // let a_bits = chip.to_bits(ctx, &a, 64)?;
@@ -453,15 +464,15 @@ mod tests {
 
                     // chip.assert_equal(ctx, &a, &a_recovered)?;
 
-                    // let cond = chip.assign_constant(ctx, Goldilocks::one())?;
+                    // let cond = chip.assign_constant(ctx, GoldilocksField::ONE)?;
 
                     // let selected = chip.select(ctx, &a, &b, &cond)?;
                     // chip.assert_equal(ctx, &selected, &a)?;
 
                     // let should_zero = chip.is_zero(ctx, &a)?;
-                    // let zero = chip.assign_constant(ctx, Goldilocks::zero())?;
+                    // let zero = chip.assign_constant(ctx, GoldilocksField::ZERO)?;
                     // let should_one = chip.is_zero(ctx, &zero)?;
-                    // let one = chip.assign_constant(ctx, Goldilocks::one())?;
+                    // let one = chip.assign_constant(ctx, GoldilocksField::ONE)?;
 
                     // chip.assert_equal(ctx, &should_zero, &zero)?;
                     // chip.assert_equal(ctx, &should_one, &one)?;
@@ -482,10 +493,5 @@ mod tests {
         let instance = Vec::<Fr>::new();
         let mock_prover = MockProver::run(DEGREE, &circuit, vec![instance.clone()]).unwrap();
         mock_prover.assert_satisfied();
-
-        // generates EVM verifier
-        let srs: ParamsKZG<Bn256> = EvmVerifier::gen_srs(DEGREE);
-        let pk = EvmVerifier::gen_pk(&srs, &circuit);
-        let _proof = EvmVerifier::gen_proof(&srs, &pk, circuit.clone(), vec![instance.clone()]);
     }
 }

@@ -1,15 +1,12 @@
 use crate::snark::types::proof::ProofValues;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::bn256::Fr,
+    halo2curves::{bn256::Fr, ff::PrimeField},
     plonk::*,
 };
-use halo2curves::goldilocks::fp::Goldilocks;
 use halo2wrong::RegionCtx;
 use halo2wrong_maingate::{AssignedValue, MainGate, MainGateConfig, RangeChip, RangeConfig};
 use itertools::Itertools;
-use poseidon::Spec;
 use std::marker::PhantomData;
 
 use super::{
@@ -17,6 +14,7 @@ use super::{
         goldilocks_chip::{GoldilocksChip, GoldilocksChipConfig},
         native_chip::arithmetic_chip::ArithmeticChipConfig,
         plonk::plonk_verifier_chip::PlonkVerifierChip,
+        spec::spec::Spec,
     },
     types::{
         assigned::{
@@ -31,13 +29,13 @@ use super::{
 };
 
 #[derive(Clone)]
-pub struct MainGateWithRangeConfig<F: FieldExt> {
+pub struct MainGateWithRangeConfig<F: PrimeField> {
     pub main_gate_config: MainGateConfig,
     pub range_config: RangeConfig,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> MainGateWithRangeConfig<F> {
+impl<F: PrimeField> MainGateWithRangeConfig<F> {
     pub fn new(meta: &mut ConstraintSystem<F>) -> Self {
         let main_gate_config = MainGate::<F>::configure(meta);
         let range_config = RangeChip::configure(meta, &main_gate_config, vec![16], vec![0]);
@@ -55,7 +53,7 @@ pub struct Verifier {
     instances: Vec<Fr>,
     vk: VerificationKeyValues<Fr>,
     common_data: CommonData<Fr>,
-    spec: Spec<Goldilocks, T, T_MINUS_ONE>,
+    spec: Spec<T, T_MINUS_ONE>,
 }
 
 impl Verifier {
@@ -64,7 +62,7 @@ impl Verifier {
         instances: Vec<Fr>,
         vk: VerificationKeyValues<Fr>,
         common_data: CommonData<Fr>,
-        spec: Spec<Goldilocks, T, T_MINUS_ONE>,
+        spec: Spec<T, T_MINUS_ONE>,
     ) -> Self {
         Self {
             proof,

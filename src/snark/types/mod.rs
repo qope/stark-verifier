@@ -1,12 +1,12 @@
 use std::marker::PhantomData;
 
-use halo2_proofs::arithmetic::Field;
 use halo2_proofs::circuit::{Layouter, Value};
+use halo2_proofs::halo2curves::ff::PrimeField;
 use halo2_proofs::plonk::Error;
-use halo2curves::{goldilocks::fp::Goldilocks, FieldExt};
 use halo2wrong::RegionCtx;
 use halo2wrong_maingate::AssignedValue;
 use plonky2::field::extension::Extendable;
+use plonky2::field::types::Field;
 use plonky2::{
     field::goldilocks_field::GoldilocksField,
     hash::{hash_types::HashOut, merkle_tree::MerkleCap, poseidon::PoseidonHash},
@@ -22,17 +22,17 @@ pub mod fri;
 pub mod proof;
 pub mod verification_key;
 
-pub fn to_goldilocks(e: GoldilocksField) -> Goldilocks {
-    Goldilocks::from(e.0)
+pub fn to_goldilocks(e: GoldilocksField) -> GoldilocksField {
+    GoldilocksField::from_canonical_u64(e.0)
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct HashValues<F: FieldExt> {
-    pub elements: [Goldilocks; 4],
+pub struct HashValues<F: PrimeField> {
+    pub elements: [GoldilocksField; 4],
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> HashValues<F> {
+impl<F: PrimeField> HashValues<F> {
     pub fn assign(
         config: &GoldilocksChipConfig<F>,
         mut layouter: impl Layouter<F>,
@@ -85,9 +85,9 @@ impl<F: FieldExt> HashValues<F> {
     }
 }
 
-impl<F: FieldExt> From<HashOut<GoldilocksField>> for HashValues<F> {
+impl<F: PrimeField> From<HashOut<GoldilocksField>> for HashValues<F> {
     fn from(value: HashOut<GoldilocksField>) -> Self {
-        let mut elements = [Goldilocks::zero(); 4];
+        let mut elements = [GoldilocksField::ZERO; 4];
         for (to, from) in elements.iter_mut().zip(value.elements.iter()) {
             *to = to_goldilocks(*from);
         }
@@ -99,9 +99,9 @@ impl<F: FieldExt> From<HashOut<GoldilocksField>> for HashValues<F> {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct MerkleCapValues<F: FieldExt>(pub Vec<HashValues<F>>);
+pub struct MerkleCapValues<F: PrimeField>(pub Vec<HashValues<F>>);
 
-impl<F: FieldExt> MerkleCapValues<F> {
+impl<F: PrimeField> MerkleCapValues<F> {
     pub fn assign(
         config: &GoldilocksChipConfig<F>,
         mut layouter: impl Layouter<F>,
@@ -131,7 +131,7 @@ impl<F: FieldExt> MerkleCapValues<F> {
     }
 }
 
-impl<F: FieldExt> From<MerkleCap<GoldilocksField, PoseidonHash>> for MerkleCapValues<F> {
+impl<F: PrimeField> From<MerkleCap<GoldilocksField, PoseidonHash>> for MerkleCapValues<F> {
     fn from(value: MerkleCap<GoldilocksField, PoseidonHash>) -> Self {
         let cap_values = value.0.iter().map(|h| HashValues::from(*h)).collect();
         MerkleCapValues(cap_values)
@@ -140,21 +140,21 @@ impl<F: FieldExt> From<MerkleCap<GoldilocksField, PoseidonHash>> for MerkleCapVa
 
 /// Contains a extension field value
 #[derive(Clone, Debug)]
-pub struct ExtensionFieldValue<F: FieldExt, const D: usize> {
-    pub elements: [Goldilocks; D],
+pub struct ExtensionFieldValue<F: PrimeField, const D: usize> {
+    pub elements: [GoldilocksField; D],
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt, const D: usize> Default for ExtensionFieldValue<F, D> {
+impl<F: PrimeField, const D: usize> Default for ExtensionFieldValue<F, D> {
     fn default() -> Self {
         Self {
-            elements: [Goldilocks::zero(); D],
+            elements: [GoldilocksField::ZERO; D],
             _marker: PhantomData,
         }
     }
 }
 
-impl<F: FieldExt, const D: usize> ExtensionFieldValue<F, D> {
+impl<F: PrimeField, const D: usize> ExtensionFieldValue<F, D> {
     pub fn assign(
         config: &GoldilocksChipConfig<F>,
         mut layouter: impl Layouter<F>,
@@ -183,7 +183,7 @@ impl<F: FieldExt, const D: usize> ExtensionFieldValue<F, D> {
     }
 }
 
-impl<F: FieldExt> From<[GoldilocksField; 2]> for ExtensionFieldValue<F, 2> {
+impl<F: PrimeField> From<[GoldilocksField; 2]> for ExtensionFieldValue<F, 2> {
     fn from(value: [GoldilocksField; 2]) -> Self {
         let mut elements = vec![];
         for from in value.iter() {
@@ -196,7 +196,7 @@ impl<F: FieldExt> From<[GoldilocksField; 2]> for ExtensionFieldValue<F, 2> {
     }
 }
 
-pub fn to_extension_field_values<F: FieldExt>(
+pub fn to_extension_field_values<F: PrimeField>(
     extension_fields: Vec<<GoldilocksField as Extendable<2>>::Extension>,
 ) -> Vec<ExtensionFieldValue<F, 2>> {
     extension_fields

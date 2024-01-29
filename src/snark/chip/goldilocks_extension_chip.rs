@@ -1,21 +1,22 @@
-use halo2_proofs::arithmetic::Field;
+use halo2_proofs::halo2curves::ff::PrimeField;
 use halo2_proofs::plonk::Error;
-use halo2curves::goldilocks::fp2::QuadraticExtension;
-use halo2curves::{goldilocks::fp::Goldilocks, FieldExt};
 use halo2wrong::RegionCtx;
-use halo2wrong_maingate::{big_to_fe, fe_to_big, AssignedValue};
+use halo2wrong_maingate::{fe_to_big, AssignedValue};
+use plonky2::field::goldilocks_field::GoldilocksField;
+use plonky2::field::types::Field;
+use plonky2::field::{extension::quadratic::QuadraticExtension, types::PrimeField64};
 
 use crate::snark::types::assigned::AssignedExtensionFieldValue;
 
 use super::goldilocks_chip::{GoldilocksChip, GoldilocksChipConfig};
 
-pub struct AssignedExtensionAlgebra<F: FieldExt>(pub [AssignedExtensionFieldValue<F, 2>; 2]);
+pub struct AssignedExtensionAlgebra<F: PrimeField>(pub [AssignedExtensionFieldValue<F, 2>; 2]);
 
-pub struct GoldilocksExtensionChip<F: FieldExt> {
+pub struct GoldilocksExtensionChip<F: PrimeField> {
     goldilocks_chip_config: GoldilocksChipConfig<F>,
 }
 
-impl<F: FieldExt> GoldilocksExtensionChip<F> {
+impl<F: PrimeField> GoldilocksExtensionChip<F> {
     pub fn new(goldilocks_chip_config: &GoldilocksChipConfig<F>) -> Self {
         Self {
             goldilocks_chip_config: goldilocks_chip_config.clone(),
@@ -26,22 +27,27 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
         GoldilocksChip::new(&self.goldilocks_chip_config)
     }
 
-    fn goldilocks_to_native_fe(&self, goldilocks: Goldilocks) -> F {
-        big_to_fe::<F>(fe_to_big::<Goldilocks>(goldilocks))
+    pub fn goldilocks_to_native_fe(&self, goldilocks: GoldilocksField) -> F {
+        F::from(goldilocks.to_canonical_u64())
     }
 
     // assumes `fe` is already in goldilocks field
-    fn native_fe_to_goldilocks(&self, fe: F) -> Goldilocks {
-        big_to_fe::<Goldilocks>(fe_to_big::<F>(fe))
+    fn native_fe_to_goldilocks(&self, fe: F) -> GoldilocksField {
+        let fe_big = fe_to_big::<F>(fe);
+        let digits = fe_big.to_u64_digits();
+        if digits.len() == 0 {
+            GoldilocksField::ZERO
+        } else {
+            GoldilocksField::from_canonical_u64(digits[0])
+        }
     }
-
-    pub fn w() -> Goldilocks {
-        Goldilocks::from(7)
+    pub fn w() -> GoldilocksField {
+        GoldilocksField::from_canonical_u64(7)
     }
 }
 
-// Layouts Goldilocks quadratic extension field arithmetic constraints
-impl<F: FieldExt> GoldilocksExtensionChip<F> {
+// Layouts GoldilocksField quadratic extension field arithmetic constraints
+impl<F: PrimeField> GoldilocksExtensionChip<F> {
     // lhs[0] * rhs[0] + w * lhs[1] * rhs[1] - res[0] - p * q_0 = 0
     // lhs[0] * rhs[1] + lhs[1] * rhs[0] - res[1] - p * q_1 = 0
     pub fn mul(
@@ -76,7 +82,7 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
         y.0[0]
             .value()
             .zip(y.0[1].value())
-            .map(|(a, b)| assert!(*a != F::zero() || *b != F::zero()));
+            .map(|(a, b)| assert!(*a != F::from(0) || *b != F::from(0)));
         let goldilocks_chip = self.goldilocks_chip();
         let y_inv = y.0[0]
             .value()
@@ -86,8 +92,7 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
                     self.native_fe_to_goldilocks(hi),
                     self.native_fe_to_goldilocks(lo),
                 ])
-                .invert()
-                .unwrap()
+                .inverse()
                 .0
                 .map(|v| self.goldilocks_to_native_fe(v));
                 (y_inv[0], y_inv[1])
@@ -135,7 +140,7 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
         &self,
         ctx: &mut RegionCtx<'_, F>,
         multiplicand: &AssignedExtensionFieldValue<F, 2>,
-        scalar: Goldilocks,
+        scalar: GoldilocksField,
     ) -> Result<AssignedExtensionFieldValue<F, 2>, Error> {
         let goldilocks_chip = self.goldilocks_chip();
         let assigned_scalar = goldilocks_chip.assign_constant(ctx, scalar)?;
@@ -151,8 +156,8 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
     pub fn arithmetic_extension(
         &self,
         ctx: &mut RegionCtx<'_, F>,
-        const_0: Goldilocks,
-        const_1: Goldilocks,
+        const_0: GoldilocksField,
+        const_1: GoldilocksField,
         multiplicand_0: &AssignedExtensionFieldValue<F, 2>,
         multiplicand_1: &AssignedExtensionFieldValue<F, 2>,
         addend: &AssignedExtensionFieldValue<F, 2>,
@@ -172,7 +177,7 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
     ) -> Result<AssignedExtensionFieldValue<F, 2>, Error> {
         let goldilocks_chip = self.goldilocks_chip();
         let elements = (0..2)
-            .map(|_| goldilocks_chip.assign_constant(ctx, Goldilocks::zero()))
+            .map(|_| goldilocks_chip.assign_constant(ctx, GoldilocksField::ZERO))
             .collect::<Result<Vec<AssignedValue<F>>, Error>>()?;
         Ok(AssignedExtensionFieldValue(elements.try_into().unwrap()))
     }
@@ -183,8 +188,8 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
     ) -> Result<AssignedExtensionFieldValue<F, 2>, Error> {
         let goldilocks_chip = self.goldilocks_chip();
         let elements = [
-            goldilocks_chip.assign_constant(ctx, Goldilocks::one())?,
-            goldilocks_chip.assign_constant(ctx, Goldilocks::zero())?,
+            goldilocks_chip.assign_constant(ctx, GoldilocksField::ONE)?,
+            goldilocks_chip.assign_constant(ctx, GoldilocksField::ZERO)?,
         ];
         Ok(AssignedExtensionFieldValue(elements))
     }
@@ -195,8 +200,8 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
     ) -> Result<AssignedExtensionFieldValue<F, 2>, Error> {
         let goldilocks_chip = self.goldilocks_chip();
         let elements = [
-            goldilocks_chip.assign_constant(ctx, Goldilocks::from(2))?,
-            goldilocks_chip.assign_constant(ctx, Goldilocks::zero())?,
+            goldilocks_chip.assign_constant(ctx, GoldilocksField::from_canonical_u64(2))?,
+            goldilocks_chip.assign_constant(ctx, GoldilocksField::ZERO)?,
         ];
         Ok(AssignedExtensionFieldValue(elements))
     }
@@ -204,7 +209,7 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
     pub fn mul_extension_with_const(
         &self,
         ctx: &mut RegionCtx<'_, F>,
-        const_0: Goldilocks,
+        const_0: GoldilocksField,
         multiplicand_0: &AssignedExtensionFieldValue<F, 2>,
         multiplicand_1: &AssignedExtensionFieldValue<F, 2>,
     ) -> Result<AssignedExtensionFieldValue<F, 2>, Error> {
@@ -212,7 +217,7 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
         self.arithmetic_extension(
             ctx,
             const_0,
-            Goldilocks::zero(),
+            GoldilocksField::ZERO,
             multiplicand_0,
             multiplicand_1,
             &zero,
@@ -225,7 +230,7 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
         multiplicand_0: &AssignedExtensionFieldValue<F, 2>,
         multiplicand_1: &AssignedExtensionFieldValue<F, 2>,
     ) -> Result<AssignedExtensionFieldValue<F, 2>, Error> {
-        self.mul_extension_with_const(ctx, Goldilocks::one(), multiplicand_0, multiplicand_1)
+        self.mul_extension_with_const(ctx, GoldilocksField::ONE, multiplicand_0, multiplicand_1)
     }
 
     pub fn mul_add_extension(
@@ -235,7 +240,7 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
         b: &AssignedExtensionFieldValue<F, 2>,
         c: &AssignedExtensionFieldValue<F, 2>,
     ) -> Result<AssignedExtensionFieldValue<F, 2>, Error> {
-        let one = Goldilocks::one();
+        let one = GoldilocksField::ONE;
         self.arithmetic_extension(ctx, one, one, a, b, c)
     }
 
@@ -246,7 +251,7 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
         b: &AssignedExtensionFieldValue<F, 2>,
         c: &AssignedExtensionFieldValue<F, 2>,
     ) -> Result<AssignedExtensionFieldValue<F, 2>, Error> {
-        let one = Goldilocks::one();
+        let one = GoldilocksField::ONE;
         self.arithmetic_extension(ctx, one, -one, a, b, c)
     }
 
@@ -307,7 +312,7 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
         lhs: &AssignedExtensionFieldValue<F, 2>,
         rhs: &AssignedExtensionFieldValue<F, 2>,
     ) -> Result<AssignedExtensionFieldValue<F, 2>, Error> {
-        let one = Goldilocks::one();
+        let one = GoldilocksField::ONE;
         let one_extension = self.one_extension(ctx)?;
         self.arithmetic_extension(ctx, one, -one, lhs, &one_extension, rhs)
     }
@@ -315,7 +320,7 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
     pub fn constant_extension(
         &self,
         ctx: &mut RegionCtx<'_, F>,
-        constant: &[Goldilocks; 2],
+        constant: &[GoldilocksField; 2],
     ) -> Result<AssignedExtensionFieldValue<F, 2>, Error> {
         let goldilocks_chip = self.goldilocks_chip();
         let elements = constant
@@ -333,7 +338,7 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
         let goldilocks_chip = self.goldilocks_chip();
         Ok(AssignedExtensionFieldValue([
             value.clone(),
-            goldilocks_chip.assign_constant(ctx, Goldilocks::zero())?,
+            goldilocks_chip.assign_constant(ctx, GoldilocksField::ZERO)?,
         ]))
     }
 
@@ -420,7 +425,7 @@ impl<F: FieldExt> GoldilocksExtensionChip<F> {
     ) -> Result<AssignedExtensionFieldValue<F, 2>, Error> {
         // cond * (a - b) + b
         let a_minus_b = self.sub_extension(ctx, a, b)?;
-        let one = Goldilocks::one();
+        let one = GoldilocksField::ONE;
         self.arithmetic_extension(ctx, one, one, cond, &a_minus_b, b)
     }
 }

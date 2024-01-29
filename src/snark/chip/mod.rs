@@ -8,3 +8,4 @@ pub mod native_chip;
 pub mod plonk;
 pub mod transcript_chip;
 pub mod vector_chip;
+pub mod spec;

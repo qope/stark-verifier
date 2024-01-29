@@ -1,7 +1,6 @@
 use std::ops::Range;
 
-use halo2_proofs::plonk::Error;
-use halo2curves::FieldExt;
+use halo2_proofs::{halo2curves::ff::PrimeField, plonk::Error};
 use halo2wrong::RegionCtx;
 
 use crate::snark::{
@@ -31,7 +30,7 @@ impl MulExtensionGateConstrainer {
     }
 }
 
-impl<F: FieldExt> CustomGateConstrainer<F> for MulExtensionGateConstrainer {
+impl<F: PrimeField> CustomGateConstrainer<F> for MulExtensionGateConstrainer {
     fn eval_unfiltered_constraint(
         &self,
         ctx: &mut RegionCtx<'_, F>,

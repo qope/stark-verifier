@@ -1,18 +1,16 @@
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     dev::MockProver,
-    halo2curves::bn256::{Bn256, Fr},
+    halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem},
-    poly::kzg::commitment::ParamsKZG,
 };
-use halo2curves::goldilocks::fp::Goldilocks;
 use halo2wrong::RegionCtx;
-use halo2wrong_maingate::{big_to_fe, fe_to_big};
 use plonky2::{
     field::types::Sample,
     field::{
         extension::{quadratic::QuadraticExtension, Extendable},
         goldilocks_field::GoldilocksField,
+        types::PrimeField64,
     },
     gates::gate::Gate,
     hash::hash_types::HashOut,
@@ -25,11 +23,7 @@ use crate::snark::{
         goldilocks_chip::{GoldilocksChip, GoldilocksChipConfig},
         native_chip::arithmetic_chip::ArithmeticChipConfig,
     },
-    types::{
-        self,
-        assigned::{AssignedExtensionFieldValue, AssignedHashValues},
-    },
-    verifier_api::EvmVerifier,
+    types::assigned::{AssignedExtensionFieldValue, AssignedHashValues},
 };
 
 const D: usize = 2;
@@ -44,7 +38,7 @@ struct TestCircuit<'a, Gate: CustomGateConstrainer<Fr>> {
 }
 
 fn goldilocks_to_fr(x: GoldilocksField) -> Fr {
-    big_to_fe(fe_to_big::<Goldilocks>(types::to_goldilocks(x)))
+    Fr::from(x.to_canonical_u64())
 }
 
 fn assign_quadratic_extensions(
@@ -178,8 +172,4 @@ pub fn test_custom_gate<PG: Gate<F, D>, HG: CustomGateConstrainer<Fr>>(
     MockProver::run(k, &circuit, vec![vec![]])
         .unwrap()
         .assert_satisfied();
-
-    let srs: ParamsKZG<Bn256> = EvmVerifier::gen_srs(k);
-    let pk = EvmVerifier::gen_pk(&srs, &circuit);
-    let _proof = EvmVerifier::gen_proof(&srs, &pk, circuit, vec![vec![]]);
 }

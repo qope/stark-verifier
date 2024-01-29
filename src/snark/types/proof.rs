@@ -10,13 +10,14 @@ use super::{
     to_extension_field_values, to_goldilocks, ExtensionFieldValue, HashValues, MerkleCapValues,
 };
 use halo2_proofs::circuit::{Layouter, Value};
+use halo2_proofs::halo2curves::ff::PrimeField;
 use halo2_proofs::plonk::Error;
-use halo2curves::{goldilocks::fp::Goldilocks, FieldExt};
 use halo2wrong::RegionCtx;
 use halo2wrong_maingate::AssignedValue;
 use itertools::Itertools;
 use plonky2::field::extension::quadratic::QuadraticExtension;
 use plonky2::field::polynomial::PolynomialCoeffs;
+use plonky2::field::types::Field;
 use plonky2::fri::proof::{FriProof, FriQueryRound};
 use plonky2::hash::merkle_proofs::MerkleProof;
 use plonky2::plonk::config::PoseidonGoldilocksConfig;
@@ -28,7 +29,7 @@ use plonky2::{
 };
 
 #[derive(Clone, Debug, Default)]
-pub struct OpeningSetValues<F: FieldExt, const D: usize> {
+pub struct OpeningSetValues<F: PrimeField, const D: usize> {
     pub constants: Vec<ExtensionFieldValue<F, D>>,
     pub plonk_sigmas: Vec<ExtensionFieldValue<F, D>>,
     pub wires: Vec<ExtensionFieldValue<F, D>>,
@@ -38,7 +39,7 @@ pub struct OpeningSetValues<F: FieldExt, const D: usize> {
     pub quotient_polys: Vec<ExtensionFieldValue<F, D>>,
 }
 
-impl<F: FieldExt> From<OpeningSet<GoldilocksField, 2>> for OpeningSetValues<F, 2> {
+impl<F: PrimeField> From<OpeningSet<GoldilocksField, 2>> for OpeningSetValues<F, 2> {
     fn from(value: OpeningSet<GoldilocksField, 2>) -> Self {
         Self {
             constants: to_extension_field_values(value.constants),
@@ -52,7 +53,7 @@ impl<F: FieldExt> From<OpeningSet<GoldilocksField, 2>> for OpeningSetValues<F, 2
     }
 }
 
-impl<F: FieldExt, const D: usize> OpeningSetValues<F, D> {
+impl<F: PrimeField, const D: usize> OpeningSetValues<F, D> {
     pub fn assign(
         config: &GoldilocksChipConfig<F>,
         mut layouter: impl Layouter<F>,
@@ -106,11 +107,11 @@ impl<F: FieldExt, const D: usize> OpeningSetValues<F, D> {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct MerkleProofValues<F: FieldExt> {
+pub struct MerkleProofValues<F: PrimeField> {
     pub siblings: Vec<HashValues<F>>,
 }
 
-impl<F: FieldExt> MerkleProofValues<F> {
+impl<F: PrimeField> MerkleProofValues<F> {
     pub fn assign(
         config: &GoldilocksChipConfig<F>,
         mut layouter: impl Layouter<F>,
@@ -125,7 +126,7 @@ impl<F: FieldExt> MerkleProofValues<F> {
     }
 }
 
-impl<F: FieldExt> From<MerkleProof<GoldilocksField, PoseidonHash>> for MerkleProofValues<F> {
+impl<F: PrimeField> From<MerkleProof<GoldilocksField, PoseidonHash>> for MerkleProofValues<F> {
     fn from(value: MerkleProof<GoldilocksField, PoseidonHash>) -> Self {
         let siblings = value
             .siblings
@@ -137,11 +138,11 @@ impl<F: FieldExt> From<MerkleProof<GoldilocksField, PoseidonHash>> for MerklePro
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct FriInitialTreeProofValues<F: FieldExt> {
-    pub evals_proofs: Vec<(Vec<Goldilocks>, MerkleProofValues<F>)>,
+pub struct FriInitialTreeProofValues<F: PrimeField> {
+    pub evals_proofs: Vec<(Vec<GoldilocksField>, MerkleProofValues<F>)>,
 }
 
-impl<F: FieldExt> From<FriInitialTreeProof<GoldilocksField, PoseidonHash>>
+impl<F: PrimeField> From<FriInitialTreeProof<GoldilocksField, PoseidonHash>>
     for FriInitialTreeProofValues<F>
 {
     fn from(value: FriInitialTreeProof<GoldilocksField, PoseidonHash>) -> Self {
@@ -149,8 +150,10 @@ impl<F: FieldExt> From<FriInitialTreeProof<GoldilocksField, PoseidonHash>>
             .evals_proofs
             .iter()
             .map(|(evals, proofs)| {
-                let evals_values: Vec<Goldilocks> =
-                    evals.iter().map(|f| Goldilocks::from(f.0)).collect();
+                let evals_values: Vec<GoldilocksField> = evals
+                    .iter()
+                    .map(|f| GoldilocksField::from_canonical_u64(f.0))
+                    .collect();
                 let proofs_values = MerkleProofValues::from(proofs.clone());
                 (evals_values, proofs_values)
             })
@@ -160,12 +163,12 @@ impl<F: FieldExt> From<FriInitialTreeProof<GoldilocksField, PoseidonHash>>
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct FriQueryStepValues<F: FieldExt, const D: usize> {
+pub struct FriQueryStepValues<F: PrimeField, const D: usize> {
     pub evals: Vec<ExtensionFieldValue<F, D>>,
     pub merkle_proof: MerkleProofValues<F>,
 }
 
-impl<F: FieldExt, const D: usize> FriQueryStepValues<F, D> {
+impl<F: PrimeField, const D: usize> FriQueryStepValues<F, D> {
     pub fn assign(
         config: &GoldilocksChipConfig<F>,
         mut layouter: impl Layouter<F>,
@@ -191,7 +194,7 @@ impl<F: FieldExt, const D: usize> FriQueryStepValues<F, D> {
     }
 }
 
-impl<F: FieldExt> From<FriQueryStep<GoldilocksField, PoseidonHash, 2>>
+impl<F: PrimeField> From<FriQueryStep<GoldilocksField, PoseidonHash, 2>>
     for FriQueryStepValues<F, 2>
 {
     fn from(value: FriQueryStep<GoldilocksField, PoseidonHash, 2>) -> Self {
@@ -209,12 +212,12 @@ impl<F: FieldExt> From<FriQueryStep<GoldilocksField, PoseidonHash, 2>>
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct FriQueryRoundValues<F: FieldExt, const D: usize> {
+pub struct FriQueryRoundValues<F: PrimeField, const D: usize> {
     pub initial_trees_proof: FriInitialTreeProofValues<F>,
     pub steps: Vec<FriQueryStepValues<F, D>>,
 }
 
-impl<F: FieldExt> From<FriQueryRound<GoldilocksField, PoseidonHash, 2>>
+impl<F: PrimeField> From<FriQueryRound<GoldilocksField, PoseidonHash, 2>>
     for FriQueryRoundValues<F, 2>
 {
     fn from(value: FriQueryRound<GoldilocksField, PoseidonHash, 2>) -> Self {
@@ -229,7 +232,7 @@ impl<F: FieldExt> From<FriQueryRound<GoldilocksField, PoseidonHash, 2>>
     }
 }
 
-impl<F: FieldExt, const D: usize> FriQueryRoundValues<F, D> {
+impl<F: PrimeField, const D: usize> FriQueryRoundValues<F, D> {
     pub fn assign(
         config: &GoldilocksChipConfig<F>,
         mut layouter: impl Layouter<F>,
@@ -287,11 +290,11 @@ impl<F: FieldExt, const D: usize> FriQueryRoundValues<F, D> {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct PolynomialCoeffsExtValues<F: FieldExt, const D: usize>(
+pub struct PolynomialCoeffsExtValues<F: PrimeField, const D: usize>(
     pub Vec<ExtensionFieldValue<F, D>>,
 );
 
-impl<F: FieldExt> From<PolynomialCoeffs<QuadraticExtension<GoldilocksField>>>
+impl<F: PrimeField> From<PolynomialCoeffs<QuadraticExtension<GoldilocksField>>>
     for PolynomialCoeffsExtValues<F, 2>
 {
     fn from(value: PolynomialCoeffs<QuadraticExtension<GoldilocksField>>) -> Self {
@@ -305,7 +308,7 @@ impl<F: FieldExt> From<PolynomialCoeffs<QuadraticExtension<GoldilocksField>>>
     }
 }
 
-impl<F: FieldExt, const D: usize> PolynomialCoeffsExtValues<F, D> {
+impl<F: PrimeField, const D: usize> PolynomialCoeffsExtValues<F, D> {
     pub fn assign(
         config: &GoldilocksChipConfig<F>,
         mut layouter: impl Layouter<F>,
@@ -322,14 +325,14 @@ impl<F: FieldExt, const D: usize> PolynomialCoeffsExtValues<F, D> {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct FriProofValues<F: FieldExt, const D: usize> {
+pub struct FriProofValues<F: PrimeField, const D: usize> {
     pub commit_phase_merkle_cap_values: Vec<MerkleCapValues<F>>,
     pub query_round_proofs: Vec<FriQueryRoundValues<F, D>>,
     pub final_poly: PolynomialCoeffsExtValues<F, D>,
-    pub pow_witness: Goldilocks,
+    pub pow_witness: GoldilocksField,
 }
 
-impl<F: FieldExt> From<FriProof<GoldilocksField, PoseidonHash, 2>> for FriProofValues<F, 2> {
+impl<F: PrimeField> From<FriProof<GoldilocksField, PoseidonHash, 2>> for FriProofValues<F, 2> {
     fn from(value: FriProof<GoldilocksField, PoseidonHash, 2>) -> Self {
         Self {
             commit_phase_merkle_cap_values: value
@@ -349,7 +352,7 @@ impl<F: FieldExt> From<FriProof<GoldilocksField, PoseidonHash, 2>> for FriProofV
 }
 
 // check constant
-impl<F: FieldExt, const D: usize> FriProofValues<F, D> {
+impl<F: PrimeField, const D: usize> FriProofValues<F, D> {
     pub fn assign(
         config: &GoldilocksChipConfig<F>,
         mut layouter: impl Layouter<F>,
@@ -401,7 +404,7 @@ impl<F: FieldExt, const D: usize> FriProofValues<F, D> {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct ProofValues<F: FieldExt, const D: usize> {
+pub struct ProofValues<F: PrimeField, const D: usize> {
     pub wires_cap: MerkleCapValues<F>,
     pub plonk_zs_partial_products_cap: MerkleCapValues<F>,
     pub quotient_polys_cap: MerkleCapValues<F>,
@@ -410,7 +413,9 @@ pub struct ProofValues<F: FieldExt, const D: usize> {
     pub opening_proof: FriProofValues<F, D>,
 }
 
-impl<F: FieldExt> From<Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>> for ProofValues<F, 2> {
+impl<F: PrimeField> From<Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>>
+    for ProofValues<F, 2>
+{
     fn from(value: Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>) -> Self {
         Self {
             wires_cap: MerkleCapValues::from(value.wires_cap),

@@ -1,5 +1,4 @@
-use halo2_proofs::plonk::Error;
-use halo2curves::FieldExt;
+use halo2_proofs::{halo2curves::ff::PrimeField, plonk::Error};
 use halo2wrong::RegionCtx;
 
 use crate::snark::{
@@ -12,7 +11,7 @@ use super::CustomGateConstrainer;
 #[derive(Clone)]
 pub struct NoopGateConstrainer;
 
-impl<F: FieldExt> CustomGateConstrainer<F> for NoopGateConstrainer {
+impl<F: PrimeField> CustomGateConstrainer<F> for NoopGateConstrainer {
     fn eval_unfiltered_constraint(
         &self,
         _ctx: &mut RegionCtx<'_, F>,

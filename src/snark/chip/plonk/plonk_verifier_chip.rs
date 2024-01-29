@@ -4,7 +4,10 @@ use crate::snark::{
         goldilocks_chip::{GoldilocksChip, GoldilocksChipConfig},
         transcript_chip::TranscriptChip,
     },
-    chip::{goldilocks_extension_chip::GoldilocksExtensionChip, hasher_chip::HasherChip},
+    chip::{
+        goldilocks_extension_chip::GoldilocksExtensionChip, hasher_chip::HasherChip,
+        spec::spec::Spec,
+    },
     types::{
         assigned::{
             AssignedExtensionFieldValue, AssignedFriChallenges, AssignedFriProofValues,
@@ -16,17 +19,19 @@ use crate::snark::{
     },
     RATE, T, T_MINUS_ONE,
 };
-use halo2_proofs::plonk::*;
-use halo2curves::{goldilocks::fp::Goldilocks, group::ff::PrimeField, FieldExt};
+use halo2_proofs::{halo2curves::ff::PrimeField, plonk::*};
 use halo2wrong::RegionCtx;
 use halo2wrong_maingate::AssignedValue;
-use poseidon::Spec;
+use plonky2::field::{
+    goldilocks_field::GoldilocksField,
+    types::{Field, PrimeField64},
+};
 
-pub struct PlonkVerifierChip<F: FieldExt> {
+pub struct PlonkVerifierChip<F: PrimeField> {
     pub goldilocks_chip_config: GoldilocksChipConfig<F>,
 }
 
-impl<F: FieldExt> PlonkVerifierChip<F> {
+impl<F: PrimeField> PlonkVerifierChip<F> {
     pub fn construct(goldilocks_chip_config: &GoldilocksChipConfig<F>) -> Self {
         Self {
             goldilocks_chip_config: goldilocks_chip_config.clone(),
@@ -41,7 +46,7 @@ impl<F: FieldExt> PlonkVerifierChip<F> {
         &self,
         ctx: &mut RegionCtx<'_, F>,
         public_inputs: &Vec<AssignedValue<F>>,
-        spec: &Spec<Goldilocks, 12, 11>,
+        spec: &Spec<12, 11>,
     ) -> Result<AssignedHashValues<F>, Error> {
         let mut hasher_chip =
             HasherChip::<F, T, T_MINUS_ONE, RATE>::new(ctx, &spec, &self.goldilocks_chip_config)?;
@@ -59,7 +64,7 @@ impl<F: FieldExt> PlonkVerifierChip<F> {
         common_data: &CommonData<F>,
         assigned_proof: &AssignedProofValues<F, 2>,
         num_challenges: usize,
-        spec: &Spec<Goldilocks, 12, 11>,
+        spec: &Spec<12, 11>,
     ) -> Result<AssignedProofChallenges<F, 2>, Error> {
         let mut transcript_chip =
             TranscriptChip::<F, 12, 11, 8>::new(ctx, &spec, &self.goldilocks_chip_config)?;
@@ -162,7 +167,7 @@ impl<F: FieldExt> PlonkVerifierChip<F> {
         challenges: &AssignedProofChallenges<F, 2>,
         vk: &AssignedVerificationKeyValues<F>,
         common_data: &CommonData<F>,
-        spec: &Spec<Goldilocks, 12, 11>,
+        spec: &Spec<12, 11>,
     ) -> Result<(), Error> {
         let goldilocks_extension_chip = GoldilocksExtensionChip::new(&self.goldilocks_chip_config);
         let one = goldilocks_extension_chip.one_extension(ctx)?;
@@ -219,18 +224,15 @@ impl<F: FieldExt> PlonkVerifierChip<F> {
             proof.quotient_polys_cap.clone(),
         ];
 
-        let g = Goldilocks::multiplicative_generator().pow(&[
-            ((halo2curves::goldilocks::fp::MODULUS - 1) / (1 << common_data.degree_bits())).to_le(),
-            0,
-            0,
-            0,
-        ]);
+        let g = GoldilocksField::MULTIPLICATIVE_GROUP_GENERATOR.exp_u64(
+            GoldilocksField::NEG_ONE.to_canonical_u64() / (1 << common_data.degree_bits()),
+        );
         let zeta_next = goldilocks_extension_chip.scalar_mul(ctx, &challenges.plonk_zeta, g)?;
         let fri_instance_info =
             FriInstanceInfo::new(&challenges.plonk_zeta, &zeta_next, common_data);
         let offset = self
             .goldilocks_chip()
-            .assign_constant(ctx, Goldilocks::multiplicative_generator())?;
+            .assign_constant(ctx, GoldilocksField::MULTIPLICATIVE_GROUP_GENERATOR)?;
         let fri_chip = FriVerifierChip::construct(
             &self.goldilocks_chip_config,
             spec.clone(),

@@ -1,14 +1,14 @@
 use crate::snark::types::{HashValues, MerkleCapValues};
-use halo2curves::FieldExt;
+use halo2_proofs::halo2curves::ff::PrimeField;
 use plonky2::plonk::{circuit_data::VerifierOnlyCircuitData, config::PoseidonGoldilocksConfig};
 
 #[derive(Clone, Debug, Default)]
-pub struct VerificationKeyValues<F: FieldExt> {
+pub struct VerificationKeyValues<F: PrimeField> {
     pub constants_sigmas_cap: MerkleCapValues<F>,
     pub circuit_digest: HashValues<F>,
 }
 
-impl<F: FieldExt> From<VerifierOnlyCircuitData<PoseidonGoldilocksConfig, 2>>
+impl<F: PrimeField> From<VerifierOnlyCircuitData<PoseidonGoldilocksConfig, 2>>
     for VerificationKeyValues<F>
 {
     fn from(value: VerifierOnlyCircuitData<PoseidonGoldilocksConfig, 2>) -> Self {

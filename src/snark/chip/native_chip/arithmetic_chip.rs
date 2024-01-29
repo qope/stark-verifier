@@ -2,12 +2,12 @@ use std::marker::PhantomData;
 
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
+    halo2curves::ff::PrimeField,
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector, TableColumn,
     },
     poly::Rotation,
 };
-use halo2curves::FieldExt;
 use halo2wrong::RegionCtx;
 use halo2wrong_maingate::{big_to_fe, decompose, fe_to_big};
 use num_bigint::BigUint;
@@ -17,7 +17,7 @@ pub const GOLDILOCKS_MODULUS: u64 = ((1 << 32) - 1) * (1 << 32) + 1;
 
 // a*b + c = q*p + r, with range check of q and r
 #[derive(Clone, Debug)]
-pub struct ArithmeticChipConfig<F: FieldExt> {
+pub struct ArithmeticChipConfig<F: PrimeField> {
     pub a: Column<Advice>,
     pub b: Column<Advice>,
     pub c: Column<Advice>,
@@ -32,7 +32,7 @@ pub struct ArithmeticChipConfig<F: FieldExt> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> ArithmeticChipConfig<F> {
+impl<F: PrimeField> ArithmeticChipConfig<F> {
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let a = meta.advice_column();
         let b = meta.advice_column();
@@ -63,14 +63,14 @@ impl<F: FieldExt> ArithmeticChipConfig<F> {
             let q_limbs = q_limbs
                 .map(|l| meta.query_advice(l, Rotation::cur()))
                 .to_vec();
-            let q_acc = (0..5).fold(Expression::Constant(F::zero()), |acc, i| {
+            let q_acc = (0..5).fold(Expression::Constant(F::from(0)), |acc, i| {
                 acc + q_limbs[i].clone() * Expression::Constant(F::from_u128(1u128 << (i * 16)))
             });
             let r = meta.query_advice(r, Rotation::cur());
             let r_limbs = r_limbs
                 .map(|l| meta.query_advice(l, Rotation::cur()))
                 .to_vec();
-            let r_acc = (0..4).fold(Expression::Constant(F::zero()), |acc, i| {
+            let r_acc = (0..4).fold(Expression::Constant(F::from(0)), |acc, i| {
                 acc + r_limbs[i].clone() * Expression::Constant(F::from_u128(1u128 << (i * 16)))
             });
             let p = Expression::Constant(F::from(GOLDILOCKS_MODULUS));
@@ -109,7 +109,7 @@ impl<F: FieldExt> ArithmeticChipConfig<F> {
     }
 }
 
-pub struct AssignedArithmetic<F: FieldExt> {
+pub struct AssignedArithmetic<F: PrimeField> {
     pub a: AssignedCell<F, F>,
     pub b: AssignedCell<F, F>,
     pub c: AssignedCell<F, F>,
@@ -118,18 +118,18 @@ pub struct AssignedArithmetic<F: FieldExt> {
 }
 
 #[derive(Clone)]
-pub enum Term<'a, F: FieldExt> {
+pub enum Term<'a, F: PrimeField> {
     Assigned(&'a AssignedCell<F, F>),
     Unassigned(Value<F>),
     Fixed(F),
 }
 
 #[derive(Clone, Debug)]
-pub struct ArithmeticChip<F: FieldExt> {
+pub struct ArithmeticChip<F: PrimeField> {
     config: ArithmeticChipConfig<F>,
 }
 
-impl<F: FieldExt> ArithmeticChip<F> {
+impl<F: PrimeField> ArithmeticChip<F> {
     pub fn new(config: &ArithmeticChipConfig<F>) -> Self {
         ArithmeticChip {
             config: config.clone(),
@@ -163,8 +163,8 @@ impl<F: FieldExt> ArithmeticChip<F> {
         let assigned = self.apply(
             ctx,
             Term::Fixed(constant),
-            Term::Unassigned(Value::known(F::zero())),
-            Term::Unassigned(Value::known(F::zero())),
+            Term::Unassigned(Value::known(F::from(0))),
+            Term::Unassigned(Value::known(F::from(0))),
         )?;
         Ok(assigned.a)
     }
@@ -176,8 +176,8 @@ impl<F: FieldExt> ArithmeticChip<F> {
     ) -> Result<AssignedCell<F, F>, Error> {
         let assigned = self.apply(
             ctx,
-            Term::Unassigned(Value::known(F::zero())),
-            Term::Fixed(F::zero()),
+            Term::Unassigned(Value::known(F::from(0))),
+            Term::Fixed(F::from(0)),
             Term::Unassigned(unassigned.clone()),
         )?;
         Ok(assigned.c)
@@ -256,7 +256,7 @@ impl<F: FieldExt> ArithmeticChip<F> {
         let constant = if fixed.is_some() {
             fixed.unwrap()
         } else {
-            F::zero()
+            F::from(0)
         };
         let assigned = self.assign(ctx, unassigned[0], unassigned[1], unassigned[2], constant)?;
         let assigned_terms = vec![&assigned.a, &assigned.b, &assigned.c];
@@ -295,19 +295,13 @@ impl<F: FieldExt> ArithmeticChip<F> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Write};
-
     use halo2_proofs::{
         circuit::{floor_planner::V1, Layouter},
         dev::MockProver,
-        halo2curves::bn256::{Bn256, Fr},
+        halo2curves::bn256::Fr,
         plonk::{Circuit, ConstraintSystem, Error},
-        poly::kzg::commitment::ParamsKZG,
     };
     use halo2wrong::RegionCtx;
-    use snark_verifier::loader::evm::encode_calldata;
-
-    use crate::snark::verifier_api::EvmVerifier;
 
     use super::ArithmeticChipConfig;
 
@@ -363,20 +357,5 @@ mod tests {
         let instance = vec![];
         let mock_prover = MockProver::run(DEGREE, &circuit, vec![instance.clone()]).unwrap();
         mock_prover.assert_satisfied();
-        println!("{}", "Mock prover passes");
-
-        let srs: ParamsKZG<Bn256> = EvmVerifier::gen_srs(DEGREE);
-        let pk = EvmVerifier::gen_pk(&srs, &circuit);
-        let proof = EvmVerifier::gen_proof(&srs, &pk, circuit.clone(), vec![instance.clone()]);
-
-        let deployment_code =
-            EvmVerifier::gen_evm_verifier(&srs, pk.get_vk(), vec![instance.len()]);
-        let calldata = encode_calldata::<Fr>(&[instance], &proof);
-        let deployment_code_hex = "0x".to_string() + &hex::encode(deployment_code);
-        let calldata_hex = "0x".to_string() + &hex::encode(calldata);
-        let mut file = File::create("deployment_code.txt").unwrap();
-        file.write_all(deployment_code_hex.as_bytes()).unwrap();
-        let mut file = File::create("calldata.txt").unwrap();
-        file.write_all(calldata_hex.as_bytes()).unwrap();
     }
 }
