@@ -1,3 +1,7 @@
+use std::fs::create_dir_all;
+use std::fs::File;
+use std::io::Write;
+
 use halo2_proofs::halo2curves::bn256::G1Affine;
 use halo2_proofs::plonk::keygen_pk;
 use halo2_proofs::plonk::keygen_vk;
@@ -27,12 +31,21 @@ pub fn test_contract_size(k: u32, circuit: &impl Circuit<Fr>) {
     println!("Verifier creation code size: {verifier_creation_code_size}");
 }
 
-pub fn test_verify_on_contract(k: u32, circuit: &(impl Circuit<Fr> + Clone), instance: &[Fr]) {
+pub fn test_verify_on_contract(
+    save: bool,
+    k: u32,
+    circuit: &(impl Circuit<Fr> + Clone),
+    instance: &[Fr],
+) {
     let mut rng = rand::thread_rng();
     let param = ParamsKZG::<Bn256>::setup(k, &mut rng);
     let vk = keygen_vk(&param, circuit).unwrap();
     let generator = SolidityGenerator::new(&param, &vk, Bdfg21, instance.len());
     let (verifier_solidity, vk_solidity) = generator.render_separately().unwrap();
+    if save {
+        save_solidity("Halo2VerifyingKey.sol", &vk_solidity);
+        save_solidity("Halo2Verifier.sol", &verifier_solidity);
+    }
 
     let verifier_creation_code = compile_solidity(&verifier_solidity);
     let verifier_creation_code_size = verifier_creation_code.len();
@@ -40,12 +53,16 @@ pub fn test_verify_on_contract(k: u32, circuit: &(impl Circuit<Fr> + Clone), ins
     let mut evm = Evm::default();
     let verifier_address = evm.create(verifier_creation_code);
     let vk_creation_code = compile_solidity(&vk_solidity);
+
     let vk_address = evm.create(vk_creation_code);
 
     let pk = keygen_pk(&param, vk, circuit).unwrap();
     let now = std::time::Instant::now();
     let calldata = {
         let proof = create_proof_checked(&param, &pk, circuit.clone(), &instance, &mut rng);
+        if save {
+            save_proof("proof.txt", &proof);
+        }
         encode_calldata(Some(vk_address.into()), &proof, &instance)
     };
     println!("Proof creation time: {:?}", now.elapsed());
@@ -92,4 +109,21 @@ pub fn create_proof_checked(
     };
     assert!(result.is_ok());
     proof
+}
+
+fn save_solidity(name: impl AsRef<str>, solidity: &str) {
+    const DIR_GENERATED: &str = "./generated";
+    create_dir_all(DIR_GENERATED).unwrap();
+    File::create(format!("{DIR_GENERATED}/{}", name.as_ref()))
+        .unwrap()
+        .write_all(solidity.as_bytes())
+        .unwrap();
+}
+
+fn save_proof(name: impl AsRef<str>, proof: &[u8]) {
+    let proof_hex = "0x".to_string() + &hex::encode(proof);
+    File::create(format!("./generated/{}", name.as_ref()))
+        .unwrap()
+        .write_all(proof_hex.as_bytes())
+        .unwrap();
 }

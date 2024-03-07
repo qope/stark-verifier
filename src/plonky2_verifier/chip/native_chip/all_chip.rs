@@ -142,6 +142,6 @@ mod tests {
         let instance = vec![];
         let mock_prover = MockProver::run(DEGREE, &circuit, vec![instance.clone()]).unwrap();
         mock_prover.assert_satisfied();
-        test_verify_on_contract(DEGREE, &circuit, &instance);
+        test_verify_on_contract(false, DEGREE, &circuit, &instance);
     }
 }

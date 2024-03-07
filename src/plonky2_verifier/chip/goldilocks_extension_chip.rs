@@ -60,13 +60,7 @@ impl<F: PrimeField> GoldilocksExtensionChip<F> {
         b: &AssignedExtensionFieldValue<F, 2>,
         c: &AssignedExtensionFieldValue<F, 2>,
     ) -> Result<AssignedExtensionFieldValue<F, 2>, Error> {
-        let assigned = self.arithmetic_chip().apply_ext(
-            ctx,
-            TermExt::Assigned(&a.0),
-            TermExt::Assigned(&b.0),
-            TermExt::Assigned(&c.0),
-        )?;
-        Ok(AssignedExtensionFieldValue(assigned.r))
+        todo!()
     }
 
     pub fn div_extension(
